@@ -124,6 +124,11 @@ function run(cmd: string): void {
   execSync(cmd, { stdio: "inherit" });
 }
 
+function timeToSeconds(t: string): number {
+  const [h, m, s] = t.split(":");
+  return parseInt(h) * 3600 + parseInt(m) * 60 + parseFloat(s);
+}
+
 // ─── Détecter si libfdk_aac est disponible ───────────────────────────────────
 
 function detectAudioEncoder(): string {
@@ -183,20 +188,23 @@ try {
     const tmpOut = path.join(tmpDir, `segment_${i}.mkv`);
     tmpFiles.push(tmpOut);
 
+    // Durée du segment en secondes (nécessaire pour -t avec seek après -i)
+    const duration = (timeToSeconds(seg.end) - timeToSeconds(seg.start)).toFixed(3);
+
     run(
         `"${ffmpegPath}" -y` +
         ` -analyzeduration 100M -probesize 100M` +
-        ` -ss ${seg.start}` +
-        ` -to ${seg.end}` +
+        // Seek APRÈS -i : timestamps toujours cohérents,
+        // évite les "unknown timestamp" sur les segments non-débutants
         ` -i "${inputFile}"` +
+        ` -ss ${seg.start}` +
+        ` -t ${duration}` +
         // Vidéo + toutes pistes audio, sans sous-titres DVB
         ` -map 0:v -map 0:a` +
         // Vidéo : copie sans réencodage
         ` -c:v copy` +
         // Audio : réencodage AAC propre (nécessaire à cause du HE-AAC Freebox sans extradata)
         ` -c:a ${audioEncoder} -b:a 128k -ar 48000` +
-        // Régénère les timestamps manquants lors du seek au milieu d'un fichier
-        ` -fflags +genpts` +
         ` -avoid_negative_ts make_zero` +
         // MKV : conteneur universel, gère correctement l'AAC réencodé
         ` "${tmpOut}"`
