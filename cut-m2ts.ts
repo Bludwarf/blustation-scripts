@@ -8,7 +8,7 @@
  *  - Vidéo    : copiée sans réencodage (-c:v copy)
  *  - Audio    : réencodé en AAC-LC 128k (le HE-AAC Freebox n'a pas d'extradata
  *               valide et ne peut pas être copié tel quel)
- *  - Conteneur: MKV en sortie (le muxer M2TS de ffmpeg assigne un mauvais tag
+ *  - Conteneur: MP4 en sortie (le muxer M2TS de ffmpeg assigne un mauvais tag
  *               à l'AAC réencodé, rendant l'audio illisible)
  *  - Sous-titres DVB Teletext : exclus (incompatibles)
  *
@@ -16,7 +16,7 @@
  *   npm install
  *
  * Usage :
- *   ./node_modules/.bin/ts-node cut-m2ts.ts <fichier.m2ts> [horodatage.csv] [sortie.mkv] [--ffmpeg-path /chemin/vers/ffmpeg]
+ *   ./node_modules/.bin/ts-node cut-m2ts.ts <fichier.m2ts> [horodatage.csv] [sortie.mp4] [--ffmpeg-path /chemin/vers/ffmpeg]
  *
  * Exemples :
  *   ./node_modules/.bin/ts-node cut-m2ts.ts "TMC - Madame est servie.m2ts"
@@ -44,7 +44,7 @@ const [inputFile, csvArg, outputArg] = args;
 
 if (!inputFile) {
   console.error(
-      "Usage: ts-node cut-m2ts.ts <fichier.m2ts> [horodatage.csv] [sortie.mkv] [--ffmpeg-path /chemin/vers/ffmpeg]"
+      "Usage: ts-node cut-m2ts.ts <fichier.m2ts> [horodatage.csv] [sortie.mp4] [--ffmpeg-path /chemin/vers/ffmpeg]"
   );
   process.exit(1);
 }
@@ -64,10 +64,10 @@ if (!fs.existsSync(csvFile)) {
   process.exit(1);
 }
 
-// Sortie en MKV (le muxer M2TS ffmpeg ne gère pas correctement l'AAC réencodé)
+// Sortie en MP4 (le muxer M2TS ffmpeg ne gère pas correctement l'AAC réencodé)
 const outputFile = (outputArg && !outputArg.startsWith("--"))
     ? outputArg
-    : deriveOutputName(inputFile, ".mkv");
+    : deriveOutputName(inputFile, ".mp4");
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -175,12 +175,12 @@ const tmpFiles: string[] = [];
 
 try {
   console.log("\n⏳ Extraction des segments...");
-  console.log("   (vidéo : copie directe | audio : réencodage AAC → MKV)\n");
+  console.log("   (vidéo : copie directe | audio : réencodage AAC → MP4)\n");
 
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
-    // Segments temporaires aussi en MKV
-    const tmpOut = path.join(tmpDir, `segment_${i}.mkv`);
+    // Segments temporaires aussi en MP4
+    const tmpOut = path.join(tmpDir, `segment_${i}.mp4`);
     tmpFiles.push(tmpOut);
 
     run(
@@ -198,7 +198,7 @@ try {
         // Régénère les timestamps manquants lors du seek au milieu d'un fichier
         ` -fflags +genpts` +
         ` -avoid_negative_ts make_zero` +
-        // MKV : conteneur universel, gère correctement l'AAC réencodé
+        // MP4 : conteneur universel, gère correctement l'AAC réencodé
         ` "${tmpOut}"`
     );
   }
