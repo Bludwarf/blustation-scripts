@@ -1,0 +1,17 @@
+{
+  "dependencies": {
+    "@types/node": "^25.6.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  },
+  "name": "scripts",
+  "version": "1.0.0",
+  "description": "Scripts Node pour BluStation (Synology)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+	"cut": "ts-node cut-m2ts.ts"
+  },
+  "author": "bludwarf@gmail.com",
+  "license": "ISC"
+}
