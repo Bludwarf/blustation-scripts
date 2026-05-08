@@ -194,8 +194,9 @@ try {
     run(
         `"${ffmpegPath}" -y` +
         ` -analyzeduration 100M -probesize 100M` +
-        // Seek APRÈS -i : timestamps toujours cohérents,
-        // évite les "unknown timestamp" sur les segments non-débutants
+        // genpts EN INPUT FLAG : régénère les timestamps manquants
+        // dans les paquets vidéo issus du flux MPEG-TS Freebox
+        ` -fflags +genpts` +
         ` -i "${inputFile}"` +
         ` -ss ${seg.start}` +
         ` -t ${duration}` +
