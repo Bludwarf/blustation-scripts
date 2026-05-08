@@ -1,5 +1,5 @@
 /**
- * cut-m2ts.ts : 2026-05-08 12:48 TODO le fichier CSV s'appelle en fait .m2ts.csv et pas .csv
+ * cut-m2ts.ts
  * -----------
  * Coupe un fichier M2TS (enregistrements Freebox) en retirant des portions
  * à partir d'un export "Horodatage (CSV)" de LosslessCut.
@@ -44,7 +44,7 @@ const [inputFile, csvArg, outputArg] = args;
 
 if (!inputFile) {
   console.error(
-    "Usage: ts-node cut-m2ts.ts <fichier.m2ts> [horodatage.csv] [sortie.mkv] [--ffmpeg-path /chemin/vers/ffmpeg]"
+      "Usage: ts-node cut-m2ts.ts <fichier.m2ts> [horodatage.csv] [sortie.mkv] [--ffmpeg-path /chemin/vers/ffmpeg]"
   );
   process.exit(1);
 }
@@ -56,8 +56,8 @@ if (!fs.existsSync(inputFile)) {
 
 // CSV : argument explicite, ou automatique (même nom que la vidéo, extension .csv)
 const csvFile = csvArg?.endsWith(".csv")
-  ? csvArg
-  : inputFile.replace(/\.[^.]+$/, ".csv");
+    ? csvArg
+    : inputFile.replace(/\.[^.]+$/, ".csv");
 
 if (!fs.existsSync(csvFile)) {
   console.error(`❌ Fichier CSV introuvable : ${csvFile}`);
@@ -66,8 +66,8 @@ if (!fs.existsSync(csvFile)) {
 
 // Sortie en MKV (le muxer M2TS ffmpeg ne gère pas correctement l'AAC réencodé)
 const outputFile = (outputArg && !outputArg.startsWith("--"))
-  ? outputArg
-  : deriveOutputName(inputFile, ".mkv");
+    ? outputArg
+    : deriveOutputName(inputFile, ".mkv");
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -142,8 +142,8 @@ function detectAudioEncoder(): string {
 
 try {
   execSync(`"${ffmpegPath}" -version`, { stdio: "ignore" });
-} catch (e) {
-  console.error(`❌ ffmpeg introuvable : ${ffmpegPath}`, e);
+} catch {
+  console.error(`❌ ffmpeg introuvable : ${ffmpegPath}`);
   process.exit(1);
 }
 
@@ -163,13 +163,13 @@ if (segments.length === 0) {
 
 console.log(`\n📋 ${segments.length} segment(s) à garder :`);
 segments.forEach((s, i) =>
-  console.log(`   ${i + 1}. "${s.name}" : ${s.start} → ${s.end}`)
+    console.log(`   ${i + 1}. "${s.name}" : ${s.start} → ${s.end}`)
 );
 
 const audioEncoder = detectAudioEncoder();
 
 const tmpDir = fs.mkdtempSync(
-  path.join(path.dirname(outputFile), "cut-m2ts-tmp-")
+    path.join(require("os").tmpdir(), "cut-m2ts-tmp-")
 );
 const tmpFiles: string[] = [];
 
@@ -184,20 +184,22 @@ try {
     tmpFiles.push(tmpOut);
 
     run(
-      `"${ffmpegPath}" -y` +
-      ` -analyzeduration 100M -probesize 100M` +
-      ` -ss ${seg.start}` +
-      ` -to ${seg.end}` +
-      ` -i "${inputFile}"` +
-      // Vidéo + toutes pistes audio, sans sous-titres DVB
-      ` -map 0:v -map 0:a` +
-      // Vidéo : copie sans réencodage
-      ` -c:v copy` +
-      // Audio : réencodage AAC propre (nécessaire à cause du HE-AAC Freebox sans extradata)
-      ` -c:a ${audioEncoder} -b:a 128k -ar 48000` +
-      ` -avoid_negative_ts make_zero` +
-      // MKV : conteneur universel, gère correctement l'AAC réencodé
-      ` "${tmpOut}"`
+        `"${ffmpegPath}" -y` +
+        ` -analyzeduration 100M -probesize 100M` +
+        ` -ss ${seg.start}` +
+        ` -to ${seg.end}` +
+        ` -i "${inputFile}"` +
+        // Vidéo + toutes pistes audio, sans sous-titres DVB
+        ` -map 0:v -map 0:a` +
+        // Vidéo : copie sans réencodage
+        ` -c:v copy` +
+        // Audio : réencodage AAC propre (nécessaire à cause du HE-AAC Freebox sans extradata)
+        ` -c:a ${audioEncoder} -b:a 128k -ar 48000` +
+        // Régénère les timestamps manquants lors du seek au milieu d'un fichier
+        ` -fflags +genpts` +
+        ` -avoid_negative_ts make_zero` +
+        // MKV : conteneur universel, gère correctement l'AAC réencodé
+        ` "${tmpOut}"`
     );
   }
 
@@ -208,16 +210,16 @@ try {
 
     const concatList = path.join(tmpDir, "concat.txt");
     const listContent = tmpFiles
-      .map(f => `file '${f.replace(/\\/g, "/")}'`)
-      .join("\n");
+        .map(f => `file '${f.replace(/\\/g, "/")}'`)
+        .join("\n");
     fs.writeFileSync(concatList, listContent, "utf-8");
 
     run(
-      `"${ffmpegPath}" -y` +
-      ` -f concat -safe 0` +
-      ` -i "${concatList}"` +
-      ` -c copy` +
-      ` "${outputFile}"`
+        `"${ffmpegPath}" -y` +
+        ` -f concat -safe 0` +
+        ` -i "${concatList}"` +
+        ` -c copy` +
+        ` "${outputFile}"`
     );
   }
 
