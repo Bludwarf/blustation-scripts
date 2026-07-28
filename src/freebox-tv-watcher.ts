@@ -67,7 +67,7 @@ const WATCHED_CHANNELS: Record<string, string> = {
  *  simple "includes" par défaut — remplace par une regex si besoin. */
 const WATCHLIST: string[] = [
     // TODO: "Le Nom De La Série Ou Du Film"
-    "terre inconnue",
+    "Columbo",
 ];
 
 /** Fenêtre de temps scannée à chaque passage (en secondes). */
