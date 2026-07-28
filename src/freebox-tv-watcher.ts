@@ -56,10 +56,11 @@ const TOKEN_FILE = "./freebox-app-token.json";
  *  TODO : remplir avec tes chaînes réelles (voir fetchChannels() ci-dessous
  *  pour lister les uuid disponibles, ex "uuid-webtv-201" pour France 2). */
 const WATCHED_CHANNELS: Record<string, string> = {
-    "uuid-webtv-201": "France 2",
-    "uuid-webtv-202": "France 3",
-    "uuid-webtv-611": "TF1",
-    "uuid-webtv-612": "M6",
+    // "uuid-webtv-201": "France 2",
+    // "uuid-webtv-202": "France 3",
+    // "uuid-webtv-611": "TF1",
+    // "uuid-webtv-612": "M6",
+    "uuid-webtv-497": "TMC",
 };
 
 /** Titres recherchés dans l'EPG. Comparaison insensible à la casse,
@@ -236,6 +237,7 @@ async function fetchEpgForChannel(
     let iMax = 1; // TODO pour économiser les quotas
 
     while (cursor < toTs && (!iMax || i < iMax)) {
+        console.log(`fetchEpgForChannel i=${i}`)
         const res = await fetchJson<{ result: Record<string, Record<string, RawEpgEntry>> }>(
             `${FREEBOX_API_BASE}/tv/epg/by_time/${cursor}`,
             {headers: authHeaders(session)}

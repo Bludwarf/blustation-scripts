@@ -127,3 +127,14 @@ Pour augmenter le quota :
 ```powershell
 Invoke-RestMethod -Method PUT -Uri "http://mafreebox.freebox.fr/api/v8/pvr/quota/" -Headers $headers
 ```
+
+Liste des chaînes :
+
+```powershell
+$channels = (Invoke-RestMethod -Method GET -Uri http://mafreebox.freebox.fr/api/v16/tv/channels/ -Headers $headers).result
+
+$channels.PSObject.Properties |
+    ForEach-Object { [PSCustomObject]@{ uuid = $_.Name; name = $_.Value.name } } |
+    Sort-Object name |
+    Format-Table -AutoSize
+```
