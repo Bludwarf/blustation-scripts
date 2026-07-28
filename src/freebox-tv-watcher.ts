@@ -19,9 +19,25 @@ import { createHmac } from "node:crypto";
 // Configuration
 // ---------------------------------------------------------------------------
 
-/** Base URL de l'API Freebox. Utilise mafreebox.freebox.fr en local,
- *  ou le api_domain fourni par /api_version si tu veux du HTTPS distant. */
-const FREEBOX_API_BASE = "http://mafreebox.freebox.fr/api/v4";
+/** Hôte de la Freebox en local. Utilise le api_domain fourni par
+ *  /api_version à la place si tu veux du HTTPS depuis l'extérieur. */
+const FREEBOX_HOST = "http://mafreebox.freebox.fr";
+
+/** Base URL de l'API, résolue dynamiquement au démarrage (voir resolveApiBase).
+ *  Certains endpoints (ex. l'EPG) ne sont disponibles qu'à partir d'une
+ *  version d'API récente ; utiliser un v4 codé en dur casse ces appels
+ *  selon le firmware (constaté : /tv/epg/... nécessite v16 sur ce Freebox
+ *  Server alors que /tv/channels/ répondait déjà en v4). */
+let FREEBOX_API_BASE = "";
+
+async function resolveApiBase(): Promise<string> {
+  // NOTE : /api_version ne suit pas l'enveloppe {success, result} des autres
+  // endpoints, d'où un fetch brut plutôt que fetchJson() ici.
+  const res = await fetch(`${FREEBOX_HOST}/api_version`);
+  const info = (await res.json()) as { api_version: string };
+  const major = info.api_version.split(".")[0];
+  return `${FREEBOX_HOST}/api/v${major}`;
+}
 
 /** Identité de l'application, déclarée une fois lors du premier appairage. */
 const APP_INFO = {
@@ -149,15 +165,66 @@ interface EpgProgram {
   duration: number; // secondes
 }
 
+/** Forme brute d'une entrée EPG telle que renvoyée par
+ *  GET /tv/epg/by_time/{timestamp} (API non documentée officiellement,
+ *  structure déduite d'une réponse réelle). */
+interface RawEpgEntry {
+  id: string;
+  title: string;
+  sub_title?: string;
+  date: number; // timestamp unix de début
+  duration: number; // secondes
+  prev?: string;
+  next?: string;
+}
+
+/**
+ * Récupère les programmes d'une chaîne entre fromTs et toTs.
+ *
+ * L'endpoint /tv/epg/by_time/{timestamp} renvoie, pour TOUTES les chaînes,
+ * un petit lot d'entrées autour du timestamp demandé (pas uniquement le
+ * programme en cours). On avance donc le curseur de requête en requête
+ * jusqu'à couvrir toute la fenêtre voulue, en dédupliquant par id.
+ */
 async function fetchEpgForChannel(
     session: Session,
     channelUuid: string,
-    fromTs: number
+    fromTs: number,
+    toTs: number
 ): Promise<EpgProgram[]> {
-  // TODO : appeler l'API TV/EPG (v3 ou v4 selon firmware) pour la chaîne et
-  // la plage horaire souhaitées, avec le header X-Fbx-App-Auth: session.sessionToken
-  // Endpoint indicatif : /api/v4/tv/epg/by_time/{channelUuid}/{fromTs}
-  throw new Error("fetchEpgForChannel: à implémenter");
+  const programs = new Map<string, EpgProgram>();
+  let cursor = fromTs;
+
+  while (cursor < toTs) {
+    const res = await fetchJson<{ result: Record<string, Record<string, RawEpgEntry>> }>(
+        `${FREEBOX_API_BASE}/tv/epg/by_time/${cursor}`,
+        { headers: authHeaders(session) }
+    );
+
+    const channelEntries = res.result[channelUuid];
+    if (!channelEntries) break; // pas de données EPG pour cette chaîne
+
+    const entries = Object.values(channelEntries);
+    if (entries.length === 0) break;
+
+    for (const entry of entries) {
+      programs.set(entry.id, {
+        id: entry.id,
+        title: entry.title,
+        sub_title: entry.sub_title,
+        start: entry.date,
+        duration: entry.duration,
+      });
+    }
+
+    // Avance juste après la fin du programme le plus tardif obtenu, pour
+    // éviter de re-scanner la même fenêtre à l'appel suivant.
+    const maxEnd = Math.max(...entries.map((e) => e.date + e.duration));
+    if (maxEnd <= cursor) break; // garde-fou anti boucle infinie
+    cursor = maxEnd;
+  }
+
+  return Array.from(programs.values()).filter((p) => p.start < toTs);
 }
 
 function matchesWatchlist(program: EpgProgram): boolean {
@@ -225,13 +292,13 @@ async function scheduleRecording(
 
 async function watchOnce(session: Session): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
+  const horizon = now + EPG_LOOKAHEAD_SECONDS;
   const existing = await fetchExistingPrecords(session);
 
   for (const channelUuid of Object.keys(WATCHED_CHANNELS)) {
-    const programs = await fetchEpgForChannel(session, channelUuid, now);
+    const programs = await fetchEpgForChannel(session, channelUuid, now, horizon);
 
     for (const program of programs) {
-      if (program.start > now + EPG_LOOKAHEAD_SECONDS) continue;
       if (!matchesWatchlist(program)) continue;
       if (alreadyProgrammed(existing, channelUuid, program.start - MARGIN_BEFORE)) continue;
 
@@ -241,6 +308,8 @@ async function watchOnce(session: Session): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  FREEBOX_API_BASE = await resolveApiBase();
+
   const appToken = await loadOrCreateAppToken();
   const session = await openSession(appToken);
 
