@@ -89,8 +89,16 @@ const MIN_REQUEST_INTERVAL_MS = 1500;
  *  1.5s — voir https://dev.freebox.fr/bugs/task/28260 pour un souci similaire). */
 const EPG_MIN_REQUEST_INTERVAL_MS = 20_000;
 
-/** Nombre max de tentatives en cas de 429 avant d'abandonner l'appel. */
+/** Nombre max de tentatives en cas de 429 avant d'abandonner l'appel
+ *  (endpoints hors EPG — login, pvr — jamais vus rate-limités jusqu'ici). */
 const MAX_429_RETRIES = 6;
+
+/** Sur l'EPG, on n'insiste PAS automatiquement : si les tentatives ratées
+ *  comptent elles-mêmes dans le quota (comportement courant, non confirmé
+ *  côté Freebox), un backoff qui s'acharne pendant plusieurs minutes ne
+ *  ferait que prolonger le blocage. On échoue vite et on laisse la
+ *  décision de retester à l'utilisateur, avec un vrai temps de pause. */
+const EPG_MAX_429_RETRIES = 0;
 
 /** Base du backoff exponentiel si la réponse 429 ne fournit pas de header
  *  Retry-After (tentative n → DEFAULT_429_BACKOFF_MS * 2^n). */
@@ -250,7 +258,7 @@ async function fetchEpgForChannel(
     const programs = new Map<string, EpgProgram>();
     let cursor = fromTs;
     let i = 0;
-    let iMax = 0; // TODO pour économiser les quotas
+    let iMax = 1; // TODO pour économiser les quotas
 
     while (cursor < toTs && (!iMax || i < iMax)) {
         console.log(`fetchEpgForChannel i=${i}`)
@@ -414,8 +422,18 @@ async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promi
     });
 
     if (res.status === 429) {
-        if (attempt >= MAX_429_RETRIES) {
-            throw new Error(`Freebox API 429 persistant après ${attempt} tentatives (${url})`);
+        const category = categoryFor(url);
+        const maxRetries = category === "epg" ? EPG_MAX_429_RETRIES : MAX_429_RETRIES;
+
+        if (attempt >= maxRetries) {
+            const bodyText = await res.text().catch(() => "<illisible>");
+            throw new Error(
+                `Freebox API 429 (rate_limit) sur ${url} — body: ${bodyText}. ` +
+                (category === "epg"
+                    ? "Pas de retry automatique sur l'EPG : attends nettement plus longtemps " +
+                    "(quelques dizaines de minutes) avant de relancer un test, plutôt que d'enchaîner."
+                    : `Abandon après ${attempt} tentative(s).`)
+            );
         }
         const retryAfterHeader = res.headers.get("Retry-After");
         const bodyText = await res.text().catch(() => "<illisible>");
@@ -424,7 +442,7 @@ async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promi
             : DEFAULT_429_BACKOFF_MS * 2 ** attempt; // backoff exponentiel
         console.warn(
             `429 sur ${url} (Retry-After=${retryAfterHeader ?? "absent"}, body=${bodyText}), ` +
-            `nouvelle tentative dans ${backoffMs}ms (tentative ${attempt + 1}/${MAX_429_RETRIES})`
+            `nouvelle tentative dans ${backoffMs}ms (tentative ${attempt + 1}/${maxRetries})`
         );
         await sleep(backoffMs);
         return fetchJson<T>(url, init, attempt + 1);
