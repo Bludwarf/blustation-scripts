@@ -80,6 +80,16 @@ const POLL_INTERVAL_MS = 60 * 60 * 1000; // 1h
 const MARGIN_BEFORE = 60;
 const MARGIN_AFTER = 5 * 60;
 
+/** Délai minimum entre deux appels à l'API (ms). La limite de débit côté
+ *  Freebox semble assez basse (429 fréquents), surtout sur /tv/epg/... */
+const MIN_REQUEST_INTERVAL_MS = 1500;
+
+/** Nombre max de tentatives en cas de 429 avant d'abandonner l'appel. */
+const MAX_429_RETRIES = 5;
+
+/** Délai de repli si la réponse 429 ne fournit pas de header Retry-After. */
+const DEFAULT_429_BACKOFF_MS = 5000;
+
 // ---------------------------------------------------------------------------
 // Authentification
 // ---------------------------------------------------------------------------
@@ -373,11 +383,37 @@ function authHeaders(session: Session): Record<string, string> {
     return {"X-Fbx-App-Auth": session.sessionToken};
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+// Timestamp du dernier appel API émis, pour espacer les requêtes suivantes
+// d'au moins MIN_REQUEST_INTERVAL_MS.
+let lastRequestAt = 0;
+
+async function throttle(): Promise<void> {
+    const wait = MIN_REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt);
+    if (wait > 0) await sleep(wait);
+    lastRequestAt = Date.now();
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promise<T> {
+    await throttle();
+
     const res = await fetch(url, {
         ...init,
         headers: {"Content-Type": "application/json", ...(init?.headers ?? {})},
     });
+
+    if (res.status === 429) {
+        if (attempt >= MAX_429_RETRIES) {
+            throw new Error(`Freebox API 429 persistant après ${attempt} tentatives (${url})`);
+        }
+        const retryAfterHeader = res.headers.get("Retry-After");
+        const backoffMs = retryAfterHeader
+            ? Number(retryAfterHeader) * 1000
+            : DEFAULT_429_BACKOFF_MS * (attempt + 1); // backoff progressif
+        console.warn(`429 sur ${url}, nouvelle tentative dans ${backoffMs}ms (tentative ${attempt + 1}/${MAX_429_RETRIES})`);
+        await sleep(backoffMs);
+        return fetchJson<T>(url, init, attempt + 1);
+    }
+
     if (!res.ok) {
         throw new Error(`Freebox API ${res.status} ${res.statusText} (${url})`);
     }
