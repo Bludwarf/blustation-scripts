@@ -56,7 +56,7 @@ const TOKEN_FILE = "./freebox-app-token.json";
  *  TODO : remplir avec tes chaînes réelles (voir fetchChannels() ci-dessous
  *  pour lister les uuid disponibles, ex "uuid-webtv-201" pour France 2). */
 const WATCHED_CHANNELS: Record<string, string> = {
-    // "uuid-webtv-201": "France 2",
+    "uuid-webtv-201": "France 2",
     // "uuid-webtv-202": "France 3",
     // "uuid-webtv-611": "TF1",
     // "uuid-webtv-612": "M6",
@@ -81,13 +81,13 @@ const MARGIN_BEFORE = 60;
 const MARGIN_AFTER = 5 * 60;
 
 /** Délai minimum entre deux appels à l'API en général (ms). */
-const MIN_REQUEST_INTERVAL_MS = 1500;
+const MIN_REQUEST_INTERVAL_MS = 0;
 
 /** Délai minimum entre deux appels spécifiquement à /tv/epg/... (ms).
  *  Cet endpoint a un quota nettement plus strict que le reste de l'API
  *  (error_code "rate_limit" constaté même avec un throttle générique de
  *  1.5s — voir https://dev.freebox.fr/bugs/task/28260 pour un souci similaire). */
-const EPG_MIN_REQUEST_INTERVAL_MS = 20_000;
+const EPG_MIN_REQUEST_INTERVAL_MS = 0;
 
 /** Nombre max de tentatives en cas de 429 avant d'abandonner l'appel
  *  (endpoints hors EPG — login, pvr — jamais vus rate-limités jusqu'ici). */
@@ -258,7 +258,7 @@ async function fetchEpgForChannel(
     const programs = new Map<string, EpgProgram>();
     let cursor = fromTs;
     let i = 0;
-    let iMax = 2; // pour tester l'hypothèse "quota par session" avec 2 appels
+    let iMax = 1; // pour tester l'hypothèse "quota par session" avec 2 appels
 
     while (cursor < toTs && (!iMax || i < iMax)) {
         console.log(`fetchEpgForChannel i=${i}`)
