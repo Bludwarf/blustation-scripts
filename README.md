@@ -122,12 +122,6 @@ Exemple de résultat pour la version 16 :
 }
 ```
 
-Pour augmenter le quota :
-
-```powershell
-Invoke-RestMethod -Method PUT -Uri "http://mafreebox.freebox.fr/api/v8/pvr/quota/" -Headers $headers
-```
-
 Liste des chaînes :
 
 ```powershell
