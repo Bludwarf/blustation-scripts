@@ -244,7 +244,7 @@ async function fetchEpgForChannel(
     const programs = new Map<string, EpgProgram>();
     let cursor = fromTs;
     let i = 0;
-    let iMax = 1; // TODO pour économiser les quotas
+    let iMax = 0; // TODO pour économiser les quotas
 
     while (cursor < toTs && (!iMax || i < iMax)) {
         console.log(`fetchEpgForChannel i=${i}`)
