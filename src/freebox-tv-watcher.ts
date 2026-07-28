@@ -67,6 +67,7 @@ const WATCHED_CHANNELS: Record<string, string> = {
  *  simple "includes" par défaut — remplace par une regex si besoin. */
 const WATCHLIST: string[] = [
     // TODO: "Le Nom De La Série Ou Du Film"
+    "terre inconnue",
 ];
 
 /** Fenêtre de temps scannée à chaque passage (en secondes). */
@@ -203,7 +204,7 @@ interface EpgProgram {
 
 /**
  * On utilise le même format que les fichiers générés par la Freebox
- * @example "TMC - Columbo (Saison 8 - épisode 4 4 Grandes manoeuvres et petits soldats) - 11-10-2025 21h00 02h20 (188)"
+ * @example "France 2 - Rendez-vous en terre inconnue (Avec Kendji Girac chez les Turkana) - 28-07-2026 21h09 03h22 (202).m2ts"
  * @param epgProgram
  */
 function epgProgramToString(epgProgram: EpgProgram): string {
@@ -222,15 +223,31 @@ function epgProgramToString(epgProgram: EpgProgram): string {
     const dateTime = `${day}-${month}-${year} ${hours}h${minutes}`;
 
     const durationHours = Math.floor(epgProgram.duration / 3600);
-    const durationMinutes = Math.round(epgProgram.duration % 3600 / 60); // TODO round fait par Freebox ?
+    const durationMinutes = Math.round((epgProgram.duration % 3600) / 60); // TODO round fait par Freebox ?
     const durationString = pad(durationHours, 2) + "h" + pad(durationMinutes, 2);
 
     return `${epgProgram.title} - ${dateTime} ${durationString}`; // TODO nombre entre parenthèses ?
 }
 
-/** Forme brute d'une entrée EPG telle que renvoyée par
+/**
+ * Forme brute d'une entrée EPG telle que renvoyée par
  *  GET /tv/epg/by_time/{timestamp} (API non documentée officiellement,
- *  structure déduite d'une réponse réelle). */
+ *  structure déduite d'une réponse réelle).
+ *  @example {
+ *   sub_title: 'Avec Kendji Girac chez les Turkana',
+ *   next: '1785277560_c2e091b2',
+ *   id: 'pluri_1730513584',
+ *   duration: 11760,
+ *   picture: '/api/latest/tv/img/epg/programs/100x77/EMI_52365577_AG.jpg',
+ *   desc: `A l'occasion des 20 ans de "Rendez-vous en terre inconnue", Frédéric Lopez a pris la route une dernière fois, aux côtés de Kendji Girac, en direction des plaines désertiques du nord-ouest du Kenya, terre du peuple Turkana. Sur les rives du plus grand lac salé d'Afrique, ils découvrent des familles animées d'un courage et d'une résilience hors norme. Les Turkana sont des éleveurs qui peuplent l'une des régions les plus arides du Kenya. Mais six années successives d'une sécheresse sans précédent ont mis à mal les troupeaux, tuant la grande partie des animaux. Les éleveurs se sont rapprochés du lac Turkana. Là, certaines familles ont fait un choix radical mais indispensable à leur survie : elles se sont tournées vers la pêche. Kendji Girac et Frédéric Lopez ont partagé le quotidien de l'une de ces communautés, à la rencontre de ses membres.`,
+ *   picture_big: '/api/latest/tv/img/epg/programs/168x130/EMI_52365577_AG.jpg',
+ *   category_name: 'Documentaire',
+ *   title: 'Rendez-vous en terre inconnue',
+ *   prev: '1785265200_59d7ecca',
+ *   category: 5,
+ *   date: 1785265800
+ * }
+ */
 interface RawEpgEntry {
     id: string;
     title: string;
@@ -281,6 +298,7 @@ async function fetchEpgForChannel(
         if (entries.length === 0) break;
 
         for (const entry of entries) {
+            // console.log(entry);
             programs.set(entry.id, {
                 id: entry.id,
                 title: entry.title,

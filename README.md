@@ -64,6 +64,8 @@ Error: Freebox API 429 (rate_limit) sur http://mafreebox.freebox.fr/api/v16/tv/e
     at async main (C:\Users\bludw\Projets\Bludwarf\Scripts Synology\src\freebox-tv-watcher.ts:393:5)
 ```
 
+Quand on regarde un exemple de RawEpgEntry, on dirait qu'on pourrait utiliser le next plutôt que d'itérer sur un cursor ?
+
 ## Notes techniques
 
 Ouverture d'une session :
