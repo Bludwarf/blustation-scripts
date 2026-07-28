@@ -49,6 +49,21 @@ Kodi. [Source](https://kodi.wiki/view/Edit_decision_list)
 - [ ] Utiliser la plage horaire la plus longue pour déclencher le cron le moins souvent possible
 - [ ] Afficher des logs pour suivre la recherche en temps réel (aide pour le debug)
 
+## Problème de quota
+
+Résultat actuel :
+
+```
+fetchEpgForChannel i=0
+fetchEpgForChannel i=1
+Error: Freebox API 429 (rate_limit) sur http://mafreebox.freebox.fr/api/v16/tv/epg/by_time/1785277020 — body: {"msg":"Too many requests","success":false,"error_code":"rate_limit"}. Pas de retry automatique sur l'EPG : attends nettement plus longtemps (quelques dizaines de minutes) avant de relancer un test, plutôt que d'enchaîner.
+    at fetchJson (C:\Users\bludw\Projets\Bludwarf\Scripts Synology\src\freebox-tv-watcher.ts:437:19)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async fetchEpgForChannel (C:\Users\bludw\Projets\Bludwarf\Scripts Synology\src\freebox-tv-watcher.ts:272:21)
+    at async watchOnce (C:\Users\bludw\Projets\Bludwarf\Scripts Synology\src\freebox-tv-watcher.ts:374:26)
+    at async main (C:\Users\bludw\Projets\Bludwarf\Scripts Synology\src\freebox-tv-watcher.ts:393:5)
+```
+
 ## Notes techniques
 
 Ouverture d'une session :
