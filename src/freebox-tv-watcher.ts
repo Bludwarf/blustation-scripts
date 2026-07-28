@@ -250,7 +250,7 @@ interface RawEpgEntry {
  * jusqu'à couvrir toute la fenêtre voulue, en dédupliquant par id.
  */
 async function fetchEpgForChannel(
-    session: Session,
+    appToken: string,
     channelUuid: string,
     fromTs: number,
     toTs: number
@@ -258,10 +258,17 @@ async function fetchEpgForChannel(
     const programs = new Map<string, EpgProgram>();
     let cursor = fromTs;
     let i = 0;
-    let iMax = 1; // TODO pour économiser les quotas
+    let iMax = 2; // pour tester l'hypothèse "quota par session" avec 2 appels
 
     while (cursor < toTs && (!iMax || i < iMax)) {
         console.log(`fetchEpgForChannel i=${i}`)
+
+        // Session neuve à chaque appel : test empirique montrant que le 429
+        // sur l'EPG semble lié au nombre d'appels PAR SESSION plutôt qu'à une
+        // fenêtre de temps (1 appel/session en rafale = jamais bloqué,
+        // 2 appels sur la MÊME session = le 2e échoue systématiquement).
+        const session = await openSession(appToken);
+
         const res = await fetchJson<{ result: Record<string, Record<string, RawEpgEntry>> }>(
             `${FREEBOX_API_BASE}/tv/epg/by_time/${cursor}`,
             {headers: authHeaders(session)}
@@ -357,14 +364,14 @@ async function scheduleRecording(
 // Boucle principale
 // ---------------------------------------------------------------------------
 
-async function watchOnce(session: Session): Promise<void> {
+async function watchOnce(appToken: string, session: Session): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
     const horizon = now + EPG_LOOKAHEAD_SECONDS;
     const existing = await fetchExistingPrecords(session);
 
     for (const channelUuid of Object.keys(WATCHED_CHANNELS)) {
         const channelTitle = WATCHED_CHANNELS[channelUuid];
-        const programs = await fetchEpgForChannel(session, channelUuid, now, horizon);
+        const programs = await fetchEpgForChannel(appToken, channelUuid, now, horizon);
 
         for (const program of programs) {
             console.log(channelTitle + " - " + epgProgramToString(program));
@@ -383,9 +390,9 @@ async function main(): Promise<void> {
     const session = await openSession(appToken);
 
     // Premier passage immédiat, puis boucle périodique
-    await watchOnce(session);
+    await watchOnce(appToken, session);
     // setInterval(() => {
-    //   watchOnce(session).catch((err) => console.error("Erreur watchOnce:", err));
+    //   watchOnce(appToken, session).catch((err) => console.error("Erreur watchOnce:", err));
     // }, POLL_INTERVAL_MS);
 }
 
