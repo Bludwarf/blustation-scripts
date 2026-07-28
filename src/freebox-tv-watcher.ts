@@ -13,6 +13,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createHmac } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -97,7 +98,7 @@ async function loadOrCreateAppToken(): Promise<string> {
   while (status === "pending") {
     await sleep(2000);
     const trackRes = await fetchJson<{ result: { status: string } }>(
-      `${FREEBOX_API_BASE}/login/authorize/${track_id}`
+        `${FREEBOX_API_BASE}/login/authorize/${track_id}`
     );
     status = trackRes.result.status; // pending | granted | denied | timeout
   }
@@ -107,18 +108,33 @@ async function loadOrCreateAppToken(): Promise<string> {
   }
 
   await writeFile(
-    TOKEN_FILE,
-    JSON.stringify({ app_token, track_id } satisfies StoredToken, null, 2)
+      TOKEN_FILE,
+      JSON.stringify({ app_token, track_id } satisfies StoredToken, null, 2)
   );
 
   return app_token;
 }
 
 async function openSession(appToken: string): Promise<Session> {
-  // TODO : ouvrir une session avec /login/ (challenge) puis /login/session/
-  // en signant le challenge avec HMAC-SHA1(app_token, challenge), comme
-  // documenté sur https://dev.freebox.fr/sdk/os/login/
-  throw new Error("openSession: à implémenter (voir doc dev.freebox.fr/sdk/os/login/)");
+  // 1. Récupère le challenge courant
+  const loginRes = await fetchJson<{ result: { challenge: string } }>(
+      `${FREEBOX_API_BASE}/login/`
+  );
+  const { challenge } = loginRes.result;
+
+  // 2. Signe le challenge avec l'app_token (HMAC-SHA1, résultat en hex)
+  const password = createHmac("sha1", appToken).update(challenge).digest("hex");
+
+  // 3. Ouvre la session
+  const sessionRes = await fetchJson<{ result: { session_token: string } }>(
+      `${FREEBOX_API_BASE}/login/session/`,
+      {
+        method: "POST",
+        body: JSON.stringify({ app_id: APP_INFO.app_id, password }),
+      }
+  );
+
+  return { sessionToken: sessionRes.result.session_token };
 }
 
 // ---------------------------------------------------------------------------
@@ -134,9 +150,9 @@ interface EpgProgram {
 }
 
 async function fetchEpgForChannel(
-  session: Session,
-  channelUuid: string,
-  fromTs: number
+    session: Session,
+    channelUuid: string,
+    fromTs: number
 ): Promise<EpgProgram[]> {
   // TODO : appeler l'API TV/EPG (v3 ou v4 selon firmware) pour la chaîne et
   // la plage horaire souhaitées, avec le header X-Fbx-App-Auth: session.sessionToken
@@ -161,26 +177,26 @@ interface PrecordSummary {
 
 async function fetchExistingPrecords(session: Session): Promise<PrecordSummary[]> {
   const res = await fetchJson<{ result: PrecordSummary[] }>(
-    `${FREEBOX_API_BASE}/pvr/programmed/`,
-    { headers: authHeaders(session) }
+      `${FREEBOX_API_BASE}/pvr/programmed/`,
+      { headers: authHeaders(session) }
   );
   return res.result;
 }
 
 function alreadyProgrammed(
-  existing: PrecordSummary[],
-  channelUuid: string,
-  start: number
+    existing: PrecordSummary[],
+    channelUuid: string,
+    start: number
 ): boolean {
   return existing.some(
-    (p) => p.channel_uuid === channelUuid && p.start === start
+      (p) => p.channel_uuid === channelUuid && p.start === start
   );
 }
 
 async function scheduleRecording(
-  session: Session,
-  channelUuid: string,
-  program: EpgProgram
+    session: Session,
+    channelUuid: string,
+    program: EpgProgram
 ): Promise<void> {
   const start = program.start - MARGIN_BEFORE;
   const end = program.start + program.duration + MARGIN_AFTER;
