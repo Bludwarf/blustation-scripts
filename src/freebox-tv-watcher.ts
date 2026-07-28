@@ -80,15 +80,21 @@ const POLL_INTERVAL_MS = 60 * 60 * 1000; // 1h
 const MARGIN_BEFORE = 60;
 const MARGIN_AFTER = 5 * 60;
 
-/** Délai minimum entre deux appels à l'API (ms). La limite de débit côté
- *  Freebox semble assez basse (429 fréquents), surtout sur /tv/epg/... */
+/** Délai minimum entre deux appels à l'API en général (ms). */
 const MIN_REQUEST_INTERVAL_MS = 1500;
 
-/** Nombre max de tentatives en cas de 429 avant d'abandonner l'appel. */
-const MAX_429_RETRIES = 5;
+/** Délai minimum entre deux appels spécifiquement à /tv/epg/... (ms).
+ *  Cet endpoint a un quota nettement plus strict que le reste de l'API
+ *  (error_code "rate_limit" constaté même avec un throttle générique de
+ *  1.5s — voir https://dev.freebox.fr/bugs/task/28260 pour un souci similaire). */
+const EPG_MIN_REQUEST_INTERVAL_MS = 20_000;
 
-/** Délai de repli si la réponse 429 ne fournit pas de header Retry-After. */
-const DEFAULT_429_BACKOFF_MS = 5000;
+/** Nombre max de tentatives en cas de 429 avant d'abandonner l'appel. */
+const MAX_429_RETRIES = 6;
+
+/** Base du backoff exponentiel si la réponse 429 ne fournit pas de header
+ *  Retry-After (tentative n → DEFAULT_429_BACKOFF_MS * 2^n). */
+const DEFAULT_429_BACKOFF_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // Authentification
@@ -383,18 +389,24 @@ function authHeaders(session: Session): Record<string, string> {
     return {"X-Fbx-App-Auth": session.sessionToken};
 }
 
-// Timestamp du dernier appel API émis, pour espacer les requêtes suivantes
-// d'au moins MIN_REQUEST_INTERVAL_MS.
-let lastRequestAt = 0;
+// Timestamp du dernier appel émis, par catégorie d'endpoint (l'EPG a son
+// propre quota, plus strict que le reste de l'API — voir constantes ci-dessus).
+const lastRequestAtByCategory: Record<string, number> = {};
 
-async function throttle(): Promise<void> {
-    const wait = MIN_REQUEST_INTERVAL_MS - (Date.now() - lastRequestAt);
+function categoryFor(url: string): string {
+    return url.includes("/tv/epg/") ? "epg" : "default";
+}
+
+async function throttle(url: string): Promise<void> {
+    const category = categoryFor(url);
+    const interval = category === "epg" ? EPG_MIN_REQUEST_INTERVAL_MS : MIN_REQUEST_INTERVAL_MS;
+    const wait = interval - (Date.now() - (lastRequestAtByCategory[category] ?? 0));
     if (wait > 0) await sleep(wait);
-    lastRequestAt = Date.now();
+    lastRequestAtByCategory[category] = Date.now();
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promise<T> {
-    await throttle();
+    await throttle(url);
 
     const res = await fetch(url, {
         ...init,
@@ -409,7 +421,7 @@ async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promi
         const bodyText = await res.text().catch(() => "<illisible>");
         const backoffMs = retryAfterHeader
             ? Number(retryAfterHeader) * 1000
-            : DEFAULT_429_BACKOFF_MS * (attempt + 1); // backoff progressif
+            : DEFAULT_429_BACKOFF_MS * 2 ** attempt; // backoff exponentiel
         console.warn(
             `429 sur ${url} (Retry-After=${retryAfterHeader ?? "absent"}, body=${bodyText}), ` +
             `nouvelle tentative dans ${backoffMs}ms (tentative ${attempt + 1}/${MAX_429_RETRIES})`
