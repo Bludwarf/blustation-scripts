@@ -66,6 +66,8 @@ Error: Freebox API 429 (rate_limit) sur http://mafreebox.freebox.fr/api/v16/tv/e
 
 Quand on regarde un exemple de RawEpgEntry, on dirait qu'on pourrait utiliser le next plutôt que d'itérer sur un cursor ?
 
+Autre piste : appeler une API externe, pour faire la recherche puis appeler l'API Freebox, uniquement si nécessaire
+
 ## Notes techniques
 
 Ouverture d'une session :
