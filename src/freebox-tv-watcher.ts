@@ -14,6 +14,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createHmac } from "node:crypto";
+import {toDate} from "./date-utils";
+import {pad} from "./string-utils";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -157,12 +159,48 @@ async function openSession(appToken: string): Promise<Session> {
 // EPG
 // ---------------------------------------------------------------------------
 
+/**
+ * @example {
+ *   id: 'pluri_1730513584',
+ *   title: 'Rendez-vous en terre inconnue',
+ *   sub_title: 'Avec Kendji Girac chez les Turkana',
+ *   start: 1785265800,
+ *   duration: 11760
+ * }
+ */
 interface EpgProgram {
   id: string;
   title: string;
   sub_title?: string;
-  start: number; // timestamp unix
+  start: number; // timestamp unix (en secondes)
   duration: number; // secondes
+}
+
+/**
+ * On utilise le même format que les fichiers générés par la Freebox
+ * @example "TMC - Columbo (Saison 8 - épisode 4 4 Grandes manoeuvres et petits soldats) - 11-10-2025 21h00 02h20 (188)"
+ * @param epgProgram
+ */
+function epgProgramToString(epgProgram: EpgProgram): string {
+  const startDate = toDate(epgProgram.start);
+
+  const formatter = new Intl.DateTimeFormat('fr-FR', {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+  const parts = formatter.formatToParts(startDate);
+  const day = parts[0].value;
+  const month = parts[2].value;
+  const year = parts[4].value;
+  const hours = parts[6].value;
+  const minutes = parts[8].value;
+  const dateTime = `${day}-${month}-${year} ${hours}h${minutes}`;
+
+  const durationHours = Math.floor(epgProgram.duration / 3600);
+  const durationMinutes = Math.round(epgProgram.duration % 3600 / 60); // TODO round fait par Freebox ?
+  const durationString = pad(durationHours, 2) + "h" + pad(durationMinutes, 2);
+
+  return `${epgProgram.title} - ${dateTime} ${durationString}`; // TODO nombre entre parenthèses ?
 }
 
 /** Forme brute d'une entrée EPG telle que renvoyée par
@@ -194,8 +232,10 @@ async function fetchEpgForChannel(
 ): Promise<EpgProgram[]> {
   const programs = new Map<string, EpgProgram>();
   let cursor = fromTs;
+  let i = 0;
+  let iMax = 1; // TODO pour économiser les quotas
 
-  while (cursor < toTs) {
+  while (cursor < toTs && (!iMax || i < iMax)) {
     const res = await fetchJson<{ result: Record<string, Record<string, RawEpgEntry>> }>(
         `${FREEBOX_API_BASE}/tv/epg/by_time/${cursor}`,
         { headers: authHeaders(session) }
@@ -222,6 +262,7 @@ async function fetchEpgForChannel(
     const maxEnd = Math.max(...entries.map((e) => e.date + e.duration));
     if (maxEnd <= cursor) break; // garde-fou anti boucle infinie
     cursor = maxEnd;
+    ++i;
   }
 
   return Array.from(programs.values()).filter((p) => p.start < toTs);
@@ -296,9 +337,11 @@ async function watchOnce(session: Session): Promise<void> {
   const existing = await fetchExistingPrecords(session);
 
   for (const channelUuid of Object.keys(WATCHED_CHANNELS)) {
+    const channelTitle = WATCHED_CHANNELS[channelUuid];
     const programs = await fetchEpgForChannel(session, channelUuid, now, horizon);
 
     for (const program of programs) {
+      console.log(channelTitle + " - " + epgProgramToString(program));
       if (!matchesWatchlist(program)) continue;
       if (alreadyProgrammed(existing, channelUuid, program.start - MARGIN_BEFORE)) continue;
 
@@ -315,9 +358,9 @@ async function main(): Promise<void> {
 
   // Premier passage immédiat, puis boucle périodique
   await watchOnce(session);
-  setInterval(() => {
-    watchOnce(session).catch((err) => console.error("Erreur watchOnce:", err));
-  }, POLL_INTERVAL_MS);
+  // setInterval(() => {
+  //   watchOnce(session).catch((err) => console.error("Erreur watchOnce:", err));
+  // }, POLL_INTERVAL_MS);
 }
 
 // ---------------------------------------------------------------------------
