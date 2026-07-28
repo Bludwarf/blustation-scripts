@@ -406,16 +406,24 @@ async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promi
             throw new Error(`Freebox API 429 persistant après ${attempt} tentatives (${url})`);
         }
         const retryAfterHeader = res.headers.get("Retry-After");
+        const bodyText = await res.text().catch(() => "<illisible>");
         const backoffMs = retryAfterHeader
             ? Number(retryAfterHeader) * 1000
             : DEFAULT_429_BACKOFF_MS * (attempt + 1); // backoff progressif
-        console.warn(`429 sur ${url}, nouvelle tentative dans ${backoffMs}ms (tentative ${attempt + 1}/${MAX_429_RETRIES})`);
+        console.warn(
+            `429 sur ${url} (Retry-After=${retryAfterHeader ?? "absent"}, body=${bodyText}), ` +
+            `nouvelle tentative dans ${backoffMs}ms (tentative ${attempt + 1}/${MAX_429_RETRIES})`
+        );
         await sleep(backoffMs);
         return fetchJson<T>(url, init, attempt + 1);
     }
 
     if (!res.ok) {
-        throw new Error(`Freebox API ${res.status} ${res.statusText} (${url})`);
+        // Journalise le corps (souvent { success: false, msg, error_code })
+        // pour distinguer un vrai souci de quota d'une erreur applicative
+        // (ex. conflit de précord) qui porterait un tout autre code HTTP.
+        const bodyText = await res.text().catch(() => "<illisible>");
+        throw new Error(`Freebox API ${res.status} ${res.statusText} (${url}) — body: ${bodyText}`);
     }
     const json = (await res.json()) as { success: boolean; result: unknown };
     if (!json.success) {
