@@ -94,6 +94,7 @@ const WATCHED_CHANNELS: Record<string, WatchedChannel> = {
  *  simple "includes" par défaut — remplace par une regex si besoin. */
 const WATCHLIST: string[] = [
     "Columbo",
+    "Meurtres au paradis",
 ];
 
 /** Marges avant/après l'enregistrement (en secondes), sinon utilise la
