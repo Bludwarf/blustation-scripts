@@ -12,10 +12,12 @@
  */
 
 import {readFile, writeFile} from "node:fs/promises";
-import {existsSync} from "node:fs";
+import {exists, existsSync} from "node:fs";
 import {createHmac} from "node:crypto";
 import {toDate} from "./date-utils";
 import {pad} from "./string-utils";
+import path from "node:path";
+import {fileExists, mkdirs} from "./file-utils";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -439,6 +441,10 @@ async function throttle(url: string): Promise<void> {
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promise<T> {
+    const pathname = new URL(url).pathname;
+    const cacheFilename = ".cache/mafreebox.freebox.fr/" + pathname + ".json";
+    // TODO lire le fichier, si existant, on renvoie directement le contenu parsé, sinon on continue => ajouter fonction dans file-utils.ts
+
     await throttle(url);
 
     const res = await fetch(url, {
@@ -446,8 +452,9 @@ async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promi
         headers: {"Content-Type": "application/json", ...(init?.headers ?? {})},
     });
 
+    const category = categoryFor(url);
+
     if (res.status === 429) {
-        const category = categoryFor(url);
         const maxRetries = category === "epg" ? EPG_MAX_429_RETRIES : MAX_429_RETRIES;
 
         if (attempt >= maxRetries) {
@@ -484,6 +491,13 @@ async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promi
     if (!json.success) {
         throw new Error(`Freebox API a renvoyé success=false (${url})`);
     }
+
+    if (category == "epg") {
+        const dir = path.dirname(cacheFilename);
+        await mkdirs(dir);
+        await writeFile(cacheFilename, JSON.stringify(json, null, 2));
+    }
+
     return json as T;
 }
 
