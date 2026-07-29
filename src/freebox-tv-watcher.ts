@@ -443,7 +443,16 @@ async function throttle(url: string): Promise<void> {
 async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promise<T> {
     const pathname = new URL(url).pathname;
     const cacheFilename = ".cache/mafreebox.freebox.fr/" + pathname + ".json";
-    // TODO lire le fichier, si existant, on renvoie directement le contenu parsé, sinon on continue => ajouter fonction dans file-utils.ts
+    const category = categoryFor(url);
+
+    // Le cache ne concerne que l'EPG : c'est le seul endpoint rate-limité, et
+    // chaque URL (avec son timestamp de cursor) correspond à une réponse figée
+    // dans le temps une fois obtenue — donc rejouable sans risque de fraîcheur.
+    if (category === "epg" && (await fileExists(cacheFilename))) {
+        console.log(`Cache hit : ${cacheFilename}`);
+        const raw = await readFile(cacheFilename, "utf-8");
+        return JSON.parse(raw) as T;
+    }
 
     await throttle(url);
 
@@ -451,8 +460,6 @@ async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promi
         ...init,
         headers: {"Content-Type": "application/json", ...(init?.headers ?? {})},
     });
-
-    const category = categoryFor(url);
 
     if (res.status === 429) {
         const maxRetries = category === "epg" ? EPG_MAX_429_RETRIES : MAX_429_RETRIES;
