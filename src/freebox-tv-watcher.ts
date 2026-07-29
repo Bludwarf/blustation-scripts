@@ -217,16 +217,11 @@ interface EpgProgram {
 function epgProgramToString(epgProgram: EpgProgram): string {
     const startDate = toDate(epgProgram.start);
 
-    const formatter = new Intl.DateTimeFormat('fr-FR', {
-        dateStyle: "short",
-        timeStyle: "short",
-    });
-    const parts = formatter.formatToParts(startDate);
-    const day = parts[0].value;
-    const month = parts[2].value;
-    const year = parts[4].value;
-    const hours = parts[6].value;
-    const minutes = parts[8].value;
+    const day = pad(startDate.getDate(), 2);
+    const month = pad(startDate.getMonth() + 1, 2);
+    const year = startDate.getFullYear();
+    const hours = pad(startDate.getHours(), 2);
+    const minutes = pad(startDate.getMinutes(), 2);
     const dateTime = `${day}-${month}-${year} ${hours}h${minutes}`;
 
     const durationHours = Math.floor(epgProgram.duration / 3600);
