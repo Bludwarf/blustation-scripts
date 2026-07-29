@@ -64,9 +64,13 @@ const APP_INFO = {
 /** Fichier local où l'app_token (secret, obtenu une seule fois) est stocké. */
 const TOKEN_FILE = "./freebox-app-token.json";
 
-/** Chemin du guide EPG externe généré par ton outil (ex. iptv-org/epg),
- *  rafraîchi périodiquement (cron quotidien) en dehors de ce script. */
-const EPG_JSON_PATH = "./guide.json";
+/** URL du serveur epg (conteneur Docker iptv-org/epg lancé en mode serveur
+ *  sur le Synology), qui expose le guide généré via HTTP.
+ *  NOTE : "localhost" ne fonctionne que si ce script tourne sur la même
+ *  machine que le conteneur. S'il tourne ailleurs (autre appareil sur le
+ *  réseau), remplace par l'IP/le nom d'hôte du Synology, ex.
+ *  "http://192.168.1.X:3000/guide.json". */
+const EPG_JSON_URL = "http://localhost:3000/guide.json";
 
 /** Chaînes à surveiller : nom → { channel_uuid Freebox, id de la chaîne
  *  dans le guide JSON externe }.
@@ -81,9 +85,8 @@ interface WatchedChannel {
 }
 
 const WATCHED_CHANNELS: Record<string, WatchedChannel> = {
-    // "France 2": {freeboxUuid: "uuid-webtv-201", epgChannelId: "France2.fr"},
-    "France 2": {freeboxUuid: "uuid-webtv-201", epgChannelId: "France2.fr@SD"}, // site : programme-tv.net
-    "TMC": {freeboxUuid: "uuid-webtv-497", epgChannelId: "TMC.fr@SD"}, // site : programme-tv.net
+    "France 2": {freeboxUuid: "uuid-webtv-201", epgChannelId: "France2.fr@France"}, // TODO vérifier epgChannelId
+    "TMC": {freeboxUuid: "uuid-webtv-497", epgChannelId: "TMC.fr@France"}, // TODO vérifier epgChannelId
 };
 
 /** Titres recherchés dans l'EPG. Comparaison insensible à la casse,
@@ -269,9 +272,14 @@ interface ExternalEpgProgramRaw {
     subTitles: ExternalTitle[];
 }
 
-async function loadExternalEpg(path: string): Promise<ExternalEpgProgramRaw[]> {
-    const raw = await readFile(path, "utf-8");
-    const guide = JSON.parse(raw) as ExternalGuide;
+async function loadExternalEpg(url: string): Promise<ExternalEpgProgramRaw[]> {
+    const res = await fetch(url);
+    if (!res.ok) {
+        throw new Error(
+            `Impossible de récupérer le guide EPG externe (${res.status} ${res.statusText}) sur ${url}`
+        );
+    }
+    const guide = (await res.json()) as ExternalGuide;
     return guide.programs;
 }
 
@@ -348,7 +356,7 @@ async function scheduleRecording(
 
 async function watchOnce(session: Session): Promise<void> {
     const existing = await fetchExistingPrecords(session);
-    const externalPrograms = await loadExternalEpg(EPG_JSON_PATH);
+    const externalPrograms = await loadExternalEpg(EPG_JSON_URL);
 
     for (const [channelTitle, {freeboxUuid, epgChannelId}] of Object.entries(WATCHED_CHANNELS)) {
         const programs = externalPrograms
