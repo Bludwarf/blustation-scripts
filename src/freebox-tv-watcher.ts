@@ -307,7 +307,7 @@ async function fetchExistingPrecords(session: Session): Promise<PrecordSummary[]
         `${FREEBOX_API_BASE}/pvr/programmed/`,
         {headers: authHeaders(session)}
     );
-    return res.result;
+    return res.result || [];
 }
 
 function alreadyProgrammed(
