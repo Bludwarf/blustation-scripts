@@ -19,13 +19,12 @@
  * Requiert Node 18+ (fetch natif) et TypeScript (`ts-node` ou compilation).
  *   npm install --save-dev typescript ts-node @types/node
  *
- * Guide EPG externe : génère un guide.json avec iptv-org/epg, par exemple
- * via un cron quotidien sur le NAS :
- *   docker run --rm -v $(pwd)/data:/epg/public ghcr.io/iptv-org/epg:master \
- *     --site=... -e JSON=true
- * Le format exact des champs (channel/title/start/stop) n'est pas garanti
- * ici par manque de vérification directe — adapte ExternalEpgProgram et
- * parseExternalDate() ci-dessous après avoir inspecté un vrai guide.json.
+ * Guide EPG externe : généré avec iptv-org/epg, ex. :
+ *   npm run grab -- --sites=tv-programme.telecablesat.fr --json
+ * Format confirmé sur un extrait réel : objet {date, channels, programs},
+ * avec start/stop en millisecondes et titres dans programs[].titles[].value
+ * (voir ExternalGuide plus bas). À exécuter périodiquement (cron) pour
+ * rafraîchir le guide.json consommé par ce script.
  */
 
 import {readFile, writeFile} from "node:fs/promises";
@@ -72,17 +71,18 @@ const EPG_JSON_PATH = "./guide.json";
 /** Chaînes à surveiller : nom → { channel_uuid Freebox, id de la chaîne
  *  dans le guide JSON externe }.
  *  TODO : freeboxUuid se récupère via GET /tv/channels/ (une seule fois,
- *  jamais vu rate-limité). epgChannelId dépend de la convention de ta
- *  source externe (ex. "TF1.fr" pour iptv-org/epg) — à vérifier dans le
- *  guide.json généré. */
+ *  jamais vu rate-limité). epgChannelId correspond au xmltv_id du guide.json
+ *  (ex. "Arte.de@France" observé pour Arte) — regarde le tableau `channels`
+ *  du guide généré pour TF1/TMC/France 2, ou le fichier de config du site
+ *  tv-programme.telecablesat.fr dans le dépôt iptv-org/epg. */
 interface WatchedChannel {
     freeboxUuid: string;
     epgChannelId: string;
 }
 
 const WATCHED_CHANNELS: Record<string, WatchedChannel> = {
-    "France 2": {freeboxUuid: "uuid-webtv-201", epgChannelId: "FranceTele2.fr"}, // TODO vérifier epgChannelId
-    "TMC": {freeboxUuid: "uuid-webtv-497", epgChannelId: "TMC.fr"}, // TODO vérifier epgChannelId
+    "France 2": {freeboxUuid: "uuid-webtv-201", epgChannelId: "France2.fr@France"}, // TODO vérifier epgChannelId
+    "TMC": {freeboxUuid: "uuid-webtv-497", epgChannelId: "TMC.fr@France"}, // TODO vérifier epgChannelId
 };
 
 /** Titres recherchés dans l'EPG. Comparaison insensible à la casse,
@@ -241,44 +241,46 @@ function matchesWatchlist(program: EpgProgram): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Forme supposée d'une entrée du guide.json généré par iptv-org/epg (ou
- * outil équivalent). NON VÉRIFIÉE contre une vraie sortie — à ajuster une
- * fois que tu as généré un premier guide.json et inspecté sa structure
- * réelle (noms de champs, format de date : ISO 8601 ? timestamp XMLTV brut
- * "YYYYMMDDHHmmss +ZZZZ" ?).
+ * Forme réelle d'un guide.json généré par iptv-org/epg (vérifiée sur un
+ * extrait produit avec --sites=tv-programme.telecablesat.fr --json).
  */
-interface ExternalEpgProgram {
-    channel: string; // id de chaîne côté source externe (cf. epgChannelId)
-    title: string;
-    sub_title?: string;
-    start: string; // à adapter selon le format réel (voir parseExternalDate)
-    stop: string;
+interface ExternalGuide {
+    date: string;
+    channels: ExternalChannel[];
+    programs: ExternalEpgProgramRaw[];
 }
 
-/** Convertit la date du guide externe en timestamp unix (secondes).
- *  TODO : vérifier le format réel une fois le guide.json généré — Date.parse
- *  gère l'ISO 8601 nativement, mais pas le format XMLTV brut
- *  ("20260729210000 +0200"), qu'il faudrait alors parser à la main. */
-function parseExternalDate(raw: string): number {
-    const ms = Date.parse(raw);
-    if (Number.isNaN(ms)) {
-        throw new Error(`Date de guide EPG externe illisible : "${raw}"`);
-    }
-    return Math.floor(ms / 1000);
+interface ExternalChannel {
+    xmltv_id: string; // ex. "Arte.de@France" — c'est ça, epgChannelId
+    name: string;
 }
 
-async function loadExternalEpg(path: string): Promise<ExternalEpgProgram[]> {
+interface ExternalTitle {
+    value: string;
+    lang: string;
+}
+
+interface ExternalEpgProgramRaw {
+    channel: string; // référence ExternalChannel.xmltv_id
+    start: number; // timestamp unix EN MILLISECONDES
+    stop: number; // timestamp unix EN MILLISECONDES
+    titles: ExternalTitle[];
+    subTitles: ExternalTitle[];
+}
+
+async function loadExternalEpg(path: string): Promise<ExternalEpgProgramRaw[]> {
     const raw = await readFile(path, "utf-8");
-    return JSON.parse(raw) as ExternalEpgProgram[];
+    const guide = JSON.parse(raw) as ExternalGuide;
+    return guide.programs;
 }
 
-function toEpgProgram(external: ExternalEpgProgram): EpgProgram {
-    const start = parseExternalDate(external.start);
-    const stop = parseExternalDate(external.stop);
+function toEpgProgram(external: ExternalEpgProgramRaw): EpgProgram {
+    const start = Math.floor(external.start / 1000);
+    const stop = Math.floor(external.stop / 1000);
     return {
         id: `${external.channel}_${start}`, // synthétique : jamais envoyé à la Freebox
-        title: external.title,
-        sub_title: external.sub_title,
+        title: external.titles[0]?.value ?? "(sans titre)",
+        sub_title: external.subTitles[0]?.value,
         start,
         duration: stop - start,
     };
