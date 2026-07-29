@@ -81,8 +81,9 @@ interface WatchedChannel {
 }
 
 const WATCHED_CHANNELS: Record<string, WatchedChannel> = {
-    "France 2": {freeboxUuid: "uuid-webtv-201", epgChannelId: "France2.fr@France"}, // TODO vérifier epgChannelId
-    "TMC": {freeboxUuid: "uuid-webtv-497", epgChannelId: "TMC.fr@France"}, // TODO vérifier epgChannelId
+    // "France 2": {freeboxUuid: "uuid-webtv-201", epgChannelId: "France2.fr"},
+    "France 2": {freeboxUuid: "uuid-webtv-201", epgChannelId: "France2.fr@SD"}, // site : programme-tv.net
+    "TMC": {freeboxUuid: "uuid-webtv-497", epgChannelId: "TMC.fr@SD"}, // site : programme-tv.net
 };
 
 /** Titres recherchés dans l'EPG. Comparaison insensible à la casse,

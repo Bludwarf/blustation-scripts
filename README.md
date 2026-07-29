@@ -44,10 +44,12 @@ Kodi. [Source](https://kodi.wiki/view/Edit_decision_list)
 
 ## TODO
 
-- [ ] Ne pas avoir à saisir le nom des chaînes par UUID dans WATCHED_CHANNELS
-- [ ] Ne pas faire de boucle dans le programme, mais utiliser un cron
+- [x] Ne pas faire de boucle dans le programme
+- [ ] Mise en place du cron
 - [ ] Utiliser la plage horaire la plus longue pour déclencher le cron le moins souvent possible
-- [ ] Afficher des logs pour suivre la recherche en temps réel (aide pour le debug)
+- [x] Afficher des logs pour suivre la recherche en temps réel (aide pour le debug)
+- [ ] Retrouver "Meurtres au paradis" diffusé le 03/08/2026 à 22h05, actuellement introuvable via [epg](https://github.com/iptv-org/epg)
+- [ ] Filtrer les chaînes dès la génération du guide.json par epg (sinon fichier énorme)
 
 ## Problème de quota
 
