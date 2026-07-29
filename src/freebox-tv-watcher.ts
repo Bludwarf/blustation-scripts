@@ -261,64 +261,55 @@ interface RawEpgEntry {
 }
 
 /**
- * Récupère les programmes d'une chaîne entre fromTs et toTs.
+ * Récupère en un seul appel l'instantané EPG pour TOUTES les chaînes autour
+ * de `ts` (l'endpoint /tv/epg/by_time/{timestamp} renvoie tout, pas une
+ * chaîne en particulier — inutile donc de faire un appel par chaîne).
  *
- * L'endpoint /tv/epg/by_time/{timestamp} renvoie, pour TOUTES les chaînes,
- * un petit lot d'entrées autour du timestamp demandé (pas uniquement le
- * programme en cours). On avance donc le curseur de requête en requête
- * jusqu'à couvrir toute la fenêtre voulue, en dédupliquant par id.
+ * Une session neuve est ouverte pour cet appel : les tests précédents
+ * montrent que le 429 sur l'EPG semble lié au nombre d'appels PAR SESSION
+ * plutôt qu'à une fenêtre de temps (1 appel/session en rafale = jamais
+ * bloqué, 2 appels sur la MÊME session = le 2e échoue systématiquement).
  */
-async function fetchEpgForChannel(
+async function fetchEpgSnapshot(
     appToken: string,
+    ts: number
+): Promise<Record<string, Record<string, RawEpgEntry>>> {
+    const session = await openSession(appToken);
+    const res = await fetchJson<{ result: Record<string, Record<string, RawEpgEntry>> }>(
+        `${FREEBOX_API_BASE}/tv/epg/by_time/${ts}`,
+        {headers: authHeaders(session)}
+    );
+    return res.result;
+}
+
+/**
+ * Extrait les programmes d'une chaîne à partir d'un instantané déjà récupéré
+ * (aucun appel réseau ici), filtrés sur toTs.
+ *
+ * NOTE : un instantané ne contient qu'un petit lot d'entrées autour du
+ * timestamp demandé (le programme en cours + voisins), pas 24h de grille.
+ * Pour un vrai lookahead sur EPG_LOOKAHEAD_SECONDS, il faudrait enchaîner
+ * plusieurs fetchEpgSnapshot à des ts croissants (un appel = toutes les
+ * chaînes, donc ça reste bien moins coûteux que l'ancienne approche par
+ * chaîne) — pas fait ici tant qu'on n'a pas mesuré le vrai budget de quota.
+ */
+function extractChannelPrograms(
+    snapshot: Record<string, Record<string, RawEpgEntry>>,
     channelUuid: string,
-    fromTs: number,
     toTs: number
-): Promise<EpgProgram[]> {
-    const programs = new Map<string, EpgProgram>();
-    let cursor = fromTs;
-    let i = 0;
-    let iMax = 1; // pour tester l'hypothèse "quota par session" avec 2 appels
+): EpgProgram[] {
+    const channelEntries = snapshot[channelUuid];
+    if (!channelEntries) return [];
 
-    while (cursor < toTs && (!iMax || i < iMax)) {
-        console.log(`fetchEpgForChannel i=${i}`)
-
-        // Session neuve à chaque appel : test empirique montrant que le 429
-        // sur l'EPG semble lié au nombre d'appels PAR SESSION plutôt qu'à une
-        // fenêtre de temps (1 appel/session en rafale = jamais bloqué,
-        // 2 appels sur la MÊME session = le 2e échoue systématiquement).
-        const session = await openSession(appToken);
-
-        const res = await fetchJson<{ result: Record<string, Record<string, RawEpgEntry>> }>(
-            `${FREEBOX_API_BASE}/tv/epg/by_time/${cursor}`,
-            {headers: authHeaders(session)}
-        );
-
-        const channelEntries = res.result[channelUuid];
-        if (!channelEntries) break; // pas de données EPG pour cette chaîne
-
-        const entries = Object.values(channelEntries);
-        if (entries.length === 0) break;
-
-        for (const entry of entries) {
-            // console.log(entry);
-            programs.set(entry.id, {
-                id: entry.id,
-                title: entry.title,
-                sub_title: entry.sub_title,
-                start: entry.date,
-                duration: entry.duration,
-            });
-        }
-
-        // Avance juste après la fin du programme le plus tardif obtenu, pour
-        // éviter de re-scanner la même fenêtre à l'appel suivant.
-        const maxEnd = Math.max(...entries.map((e) => e.date + e.duration));
-        if (maxEnd <= cursor) break; // garde-fou anti boucle infinie
-        cursor = maxEnd;
-        ++i;
-    }
-
-    return Array.from(programs.values()).filter((p) => p.start < toTs);
+    return Object.values(channelEntries)
+        .map((entry) => ({
+            id: entry.id,
+            title: entry.title,
+            sub_title: entry.sub_title,
+            start: entry.date,
+            duration: entry.duration,
+        }))
+        .filter((p) => p.start < toTs);
 }
 
 function matchesWatchlist(program: EpgProgram): boolean {
@@ -389,9 +380,13 @@ async function watchOnce(appToken: string, session: Session): Promise<void> {
     const horizon = now + EPG_LOOKAHEAD_SECONDS;
     const existing = await fetchExistingPrecords(session);
 
+    // Un seul appel EPG pour toutes les chaînes surveillées (au lieu d'un
+    // appel par chaîne comme avant), vu que by_time renvoie tout d'un coup.
+    const snapshot = await fetchEpgSnapshot(appToken, now);
+
     for (const channelUuid of Object.keys(WATCHED_CHANNELS)) {
         const channelTitle = WATCHED_CHANNELS[channelUuid];
-        const programs = await fetchEpgForChannel(appToken, channelUuid, now, horizon);
+        const programs = extractChannelPrograms(snapshot, channelUuid, horizon);
 
         for (const program of programs) {
             console.log(channelTitle + " - " + epgProgramToString(program));
