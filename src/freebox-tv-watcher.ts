@@ -71,7 +71,7 @@ const TOKEN_FILE = "./freebox-app-token.json";
  *  NOTE : ce chemin suppose que ce script tourne sur le même NAS que le
  *  volume de sortie. S'il tourne ailleurs, pointe vers le partage réseau
  *  correspondant (ex. un chemin SMB monté). */
-const EPG_JSON_PATH = "/volume1/docker/epg/output/guide.json";
+const EPG_JSON_PATH = "/volume1/docker/epg/data/guide.json";
 
 /** Chaînes à surveiller : nom → { channel_uuid Freebox, id de la chaîne
  *  dans le guide JSON externe }.
