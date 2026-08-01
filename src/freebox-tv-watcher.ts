@@ -64,13 +64,14 @@ const APP_INFO = {
 /** Fichier local où l'app_token (secret, obtenu une seule fois) est stocké. */
 const TOKEN_FILE = "./freebox-app-token.json";
 
-/** URL du serveur epg (conteneur Docker iptv-org/epg lancé en mode serveur
- *  sur le Synology), qui expose le guide généré via HTTP.
- *  NOTE : "localhost" ne fonctionne que si ce script tourne sur la même
- *  machine que le conteneur. S'il tourne ailleurs (autre appareil sur le
- *  réseau), remplace par l'IP/le nom d'hôte du Synology, ex.
- *  "http://192.168.1.X:3000/guide.json". */
-const EPG_JSON_URL = "http://localhost:3000/guide.json";
+/** Chemin du guide.json généré périodiquement par un conteneur Docker
+ *  éphémère (iptv-org/epg lancé en one-shot via le Planificateur de tâches
+ *  du Synology, cf. `docker run --rm -v .../output:/epg/public ...`), pas
+ *  par un serveur permanent.
+ *  NOTE : ce chemin suppose que ce script tourne sur le même NAS que le
+ *  volume de sortie. S'il tourne ailleurs, pointe vers le partage réseau
+ *  correspondant (ex. un chemin SMB monté). */
+const EPG_JSON_PATH = "/volume1/docker/epg/output/guide.json";
 
 /** Chaînes à surveiller : nom → { channel_uuid Freebox, id de la chaîne
  *  dans le guide JSON externe }.
@@ -269,14 +270,9 @@ interface ExternalEpgProgramRaw {
     subTitles: ExternalTitle[];
 }
 
-async function loadExternalEpg(url: string): Promise<ExternalEpgProgramRaw[]> {
-    const res = await fetch(url);
-    if (!res.ok) {
-        throw new Error(
-            `Impossible de récupérer le guide EPG externe (${res.status} ${res.statusText}) sur ${url}`
-        );
-    }
-    const guide = (await res.json()) as ExternalGuide;
+async function loadExternalEpg(path: string): Promise<ExternalEpgProgramRaw[]> {
+    const raw = await readFile(path, "utf-8");
+    const guide = JSON.parse(raw) as ExternalGuide;
     return guide.programs;
 }
 
@@ -353,7 +349,7 @@ async function scheduleRecording(
 
 async function watchOnce(session: Session): Promise<void> {
     const existing = await fetchExistingPrecords(session);
-    const externalPrograms = await loadExternalEpg(EPG_JSON_URL);
+    const externalPrograms = await loadExternalEpg(EPG_JSON_PATH);
 
     for (const [channelTitle, {freeboxUuid, epgChannelId}] of Object.entries(WATCHED_CHANNELS)) {
         const programs = externalPrograms
