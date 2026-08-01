@@ -40,16 +40,20 @@ Kodi. [Source](https://kodi.wiki/view/Edit_decision_list)
 
 # Freebox TV Watcher
 
+```bash
+npm run freebox-tv-watch
+```
+
 - `openSession` : Ouverture de session à configurer en suivant https://dev.freebox.fr/sdk/os/login/
 
 ## TODO
 
 - [x] Ne pas faire de boucle dans le programme
-- [ ] Mise en place du cron
-- [ ] Utiliser la plage horaire la plus longue pour déclencher le cron le moins souvent possible
+- [x] Mise en place du cron
+- [x] Utiliser la plage horaire la plus longue pour déclencher le cron le moins souvent possible => 14 jours
 - [x] Afficher des logs pour suivre la recherche en temps réel (aide pour le debug)
-- [ ] Retrouver "Meurtres au paradis" diffusé le 03/08/2026 à 22h05, actuellement introuvable via [epg](https://github.com/iptv-org/epg)
-- [ ] Filtrer les chaînes dès la génération du guide.json par epg (sinon fichier énorme)
+- [x] Retrouver "Meurtres au paradis" diffusé le 03/08/2026 à 22h05, actuellement introuvable via [epg](https://github.com/iptv-org/epg)
+- [x] Filtrer les chaînes dès la génération du guide.json par epg (sinon fichier énorme)
 
 ## Problème de quota
 
