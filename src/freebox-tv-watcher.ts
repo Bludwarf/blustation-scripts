@@ -95,6 +95,7 @@ const WATCHED_CHANNELS: Record<string, WatchedChannel> = {
  *  simple "includes" par défaut — remplace par une regex si besoin. */
 const WATCHLIST: string[] = [
     "Columbo",
+    "Enquêtes au paradis",
     "Meurtres au paradis",
 ];
 
