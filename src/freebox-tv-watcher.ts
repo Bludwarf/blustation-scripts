@@ -34,6 +34,49 @@ import {toDate} from "./date-utils";
 import {pad} from "./string-utils";
 
 // ---------------------------------------------------------------------------
+// Logger — sorties lisibles (horodatage + icône + couleur), pour suivre le
+// déroulement du script et faciliter le debug, sans dépendance externe.
+// ---------------------------------------------------------------------------
+
+const ANSI = {
+    reset: "\x1b[0m",
+    dim: "\x1b[2m",
+    bold: "\x1b[1m",
+    cyan: "\x1b[36m",
+    green: "\x1b[32m",
+    yellow: "\x1b[33m",
+    red: "\x1b[31m",
+    magenta: "\x1b[35m",
+};
+
+function timestamp(): string {
+    return new Date().toISOString().slice(11, 19); // HH:MM:SS
+}
+
+export const logger = {
+    section(title: string): void {
+        console.log(`\n${ANSI.bold}${ANSI.magenta}▶ ${title}${ANSI.reset}`);
+    },
+    info(message: string): void {
+        console.log(`${ANSI.dim}[${timestamp()}]${ANSI.reset} ${ANSI.cyan}ℹ${ANSI.reset}  ${message}`);
+    },
+    success(message: string): void {
+        console.log(`${ANSI.dim}[${timestamp()}]${ANSI.reset} ${ANSI.green}✔${ANSI.reset}  ${message}`);
+    },
+    warn(message: string): void {
+        console.warn(`${ANSI.dim}[${timestamp()}]${ANSI.reset} ${ANSI.yellow}⚠${ANSI.reset}  ${message}`);
+    },
+    error(message: string): void {
+        console.error(`${ANSI.dim}[${timestamp()}]${ANSI.reset} ${ANSI.red}✖${ANSI.reset}  ${message}`);
+    },
+    detail(message: string): void {
+        // Pour le détail verbeux (ex. liste des programmes scannés), en plus
+        // discret que info() pour ne pas noyer les événements importants.
+        console.log(`${ANSI.dim}[${timestamp()}]   ${message}${ANSI.reset}`);
+    },
+};
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
@@ -145,7 +188,7 @@ async function loadOrCreateAppToken(): Promise<string> {
 
     const {app_token, track_id} = authorizeRes.result;
 
-    console.log("Valide la demande d'appairage sur l'écran de la Freebox...");
+    logger.info("Valide la demande d'appairage sur l'écran de la Freebox...");
 
     // 2. Poll du statut jusqu'à validation (ou timeout/refus)
     let status = "pending";
@@ -204,7 +247,7 @@ async function openSession(appToken: string): Promise<Session> {
  *   duration: 11760
  * }
  */
-interface EpgProgram {
+export interface EpgProgram {
     id: string;
     title: string;
     sub_title?: string;
@@ -217,7 +260,7 @@ interface EpgProgram {
  * @example "France 2 - Rendez-vous en terre inconnue (Avec Kendji Girac chez les Turkana) - 28-07-2026 21h09 03h22 (202).m2ts"
  * @param epgProgram
  */
-function epgProgramToString(epgProgram: EpgProgram): string {
+export function epgProgramToString(epgProgram: EpgProgram): string {
     const startDate = toDate(epgProgram.start);
 
     const day = pad(startDate.getDate(), 2);
@@ -234,9 +277,9 @@ function epgProgramToString(epgProgram: EpgProgram): string {
     return `${epgProgram.title} - ${dateTime} ${durationString}`; // TODO nombre entre parenthèses ?
 }
 
-function matchesWatchlist(program: EpgProgram): boolean {
+export function matchesWatchlist(program: EpgProgram, watchlist: string[] = WATCHLIST): boolean {
     const haystack = `${program.title} ${program.sub_title ?? ""}`.toLowerCase();
-    return WATCHLIST.some((title) => haystack.includes(title.toLowerCase()));
+    return watchlist.some((title) => haystack.includes(title.toLowerCase()));
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +306,7 @@ interface ExternalTitle {
     lang: string;
 }
 
-interface ExternalEpgProgramRaw {
+export interface ExternalEpgProgramRaw {
     channel: string; // référence ExternalChannel.xmltv_id
     start: number; // timestamp unix EN MILLISECONDES
     stop: number; // timestamp unix EN MILLISECONDES
@@ -277,7 +320,7 @@ async function loadExternalEpg(path: string): Promise<ExternalEpgProgramRaw[]> {
     return guide.programs;
 }
 
-function toEpgProgram(external: ExternalEpgProgramRaw): EpgProgram {
+export function toEpgProgram(external: ExternalEpgProgramRaw): EpgProgram {
     const start = Math.floor(external.start / 1000);
     const stop = Math.floor(external.stop / 1000);
     return {
@@ -293,7 +336,7 @@ function toEpgProgram(external: ExternalEpgProgramRaw): EpgProgram {
 // Programmation des enregistrements (PVR)
 // ---------------------------------------------------------------------------
 
-interface PrecordSummary {
+export interface PrecordSummary {
     channel_uuid: string;
     start: number;
     end: number;
@@ -307,7 +350,7 @@ async function fetchExistingPrecords(session: Session): Promise<PrecordSummary[]
     return res.result || [];
 }
 
-function alreadyProgrammed(
+export function alreadyProgrammed(
     existing: PrecordSummary[],
     channelUuid: string,
     start: number
@@ -341,7 +384,7 @@ async function scheduleRecording(
         }),
     });
 
-    console.log(`Programmé : "${program.title}" sur ${channelTitle}`);
+    logger.success(`Programmé : "${program.title}" sur ${channelTitle}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -349,18 +392,30 @@ async function scheduleRecording(
 // ---------------------------------------------------------------------------
 
 async function watchOnce(session: Session): Promise<void> {
+    logger.section("Surveillance TV");
+
     const existing = await fetchExistingPrecords(session);
+    logger.info(`${existing.length} enregistrement(s) déjà programmé(s) sur la Freebox`);
+
     const externalPrograms = await loadExternalEpg(EPG_JSON_PATH);
+    logger.info(`${externalPrograms.length} programme(s) chargé(s) depuis le guide externe`);
 
     for (const [channelTitle, {freeboxUuid, epgChannelId}] of Object.entries(WATCHED_CHANNELS)) {
         const programs = externalPrograms
             .filter((p) => p.channel === epgChannelId)
             .map(toEpgProgram);
 
+        logger.info(`${channelTitle} (${epgChannelId}) : ${programs.length} programme(s) au guide`);
+
         for (const program of programs) {
-            console.log(channelTitle + " - " + epgProgramToString(program));
+            logger.detail(channelTitle + " - " + epgProgramToString(program));
+
             if (!matchesWatchlist(program)) continue;
-            if (alreadyProgrammed(existing, freeboxUuid, program.start - MARGIN_BEFORE)) continue;
+
+            if (alreadyProgrammed(existing, freeboxUuid, program.start - MARGIN_BEFORE)) {
+                logger.info(`Déjà programmé, ignoré : "${program.title}" sur ${channelTitle}`);
+                continue;
+            }
 
             await scheduleRecording(session, freeboxUuid, channelTitle, program);
         }
@@ -412,7 +467,7 @@ async function fetchJson<T>(url: string, init?: RequestInit, attempt = 0): Promi
         const backoffMs = retryAfterHeader
             ? Number(retryAfterHeader) * 1000
             : DEFAULT_429_BACKOFF_MS * 2 ** attempt;
-        console.warn(
+        logger.warn(
             `429 sur ${url} (Retry-After=${retryAfterHeader ?? "absent"}, body=${bodyText}), ` +
             `nouvelle tentative dans ${backoffMs}ms (tentative ${attempt + 1}/${MAX_429_RETRIES})`
         );
@@ -436,7 +491,14 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-});
+// Ne s'exécute que si ce fichier est lancé directement (node/tsx), jamais
+// à l'import — indispensable pour pouvoir importer les fonctions pures de
+// ce module depuis freebox-tv-watcher.test.ts sans déclencher de vrais
+// appels réseau.
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+    main().catch((err) => {
+        logger.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+    });
+}
