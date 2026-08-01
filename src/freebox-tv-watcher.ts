@@ -491,12 +491,13 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Ne s'exécute que si ce fichier est lancé directement (node/tsx), jamais
-// à l'import — indispensable pour pouvoir importer les fonctions pures de
-// ce module depuis freebox-tv-watcher.test.ts sans déclencher de vrais
-// appels réseau.
-const isMainModule = import.meta.url === `file://${process.argv[1]}`;
-if (isMainModule) {
+// Ne s'exécute que si ce fichier est lancé directement (ts-node), jamais à
+// l'import — indispensable pour pouvoir importer les fonctions pures de ce
+// module depuis freebox-tv-watcher.test.ts sans déclencher de vrais appels
+// réseau. `require.main === module` est l'équivalent CommonJS de la
+// vérification ESM (`import.meta.url === ...`) — cohérent avec
+// "module": "commonjs" dans tsconfig.json et l'exécution via ts-node.
+if (require.main === module) {
     main().catch((err) => {
         logger.error(err instanceof Error ? err.message : String(err));
         process.exit(1);
